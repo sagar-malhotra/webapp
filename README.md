@@ -10,7 +10,7 @@ Run the application using the command
 - Python ./Assignment1.py
 
 Check the url on which the application is running
-Now you can use the crul command to fetch the application outcome
+Now you can use the curl command to fetch the application outcome
 -curl <url-of-the-application>
 
 
