@@ -14,7 +14,11 @@ Run the application using the command
 
 Check the url on which the application is running
 
-Now you can use the curl command to fetch the application outcome
-- curl (url-of-the-application)
+Now you can use the curl command to fetch the application output
+- curl (url-of-the-application) 
+
+or 
+- curl -v (url-of-the-application)
+For more details on application output
 
 
