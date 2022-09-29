@@ -19,6 +19,7 @@ Now you can use the curl command to fetch the application output
 
 or 
 - curl -v (url-of-the-application)
+- 
 For more details on application output
 
 
