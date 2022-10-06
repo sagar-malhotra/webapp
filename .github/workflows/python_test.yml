@@ -17,5 +17,5 @@ jobs:
     - name: Print directory
       run: pwd
     - name: Run python Test
-      run: python webapp/Assignment_2/test.py
+      run: python /home/runner/work/webapp/webapp/webapp/Assignment_2/test.py
         
