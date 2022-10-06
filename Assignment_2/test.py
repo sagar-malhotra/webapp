@@ -5,7 +5,7 @@ class SimpleTest(unittest.TestCase):
     
  
     def test(self):
-        file_list = ['app2.py','db.py','routes.py']
+        file_list = ['README.md']
         CURR_DIR = os.getcwd()
         dir_list = os.listdir(CURR_DIR)
         output = True
