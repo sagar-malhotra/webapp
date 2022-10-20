@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: "This templatewill create an EC2 instance"
+Description: "Template for EC2 instance"
 
 Parameters:
   vpcCidr:
@@ -11,22 +11,6 @@ Parameters:
   amiId:
     Description: "Id of custom ami"
     Type: String
-
-    
-  # PublicSubnet1:
-  #   Description: "Give IP Range for public subnet 1"
-  #   Type: String
-  #   Default: 10.0.0.0/24
-    
-  # PublicSubnet2:
-  #   Default: 10.0.2.0/24
-  #   Description: "Give IP Range for public subnet 2"
-  #   Type: String
-    
-  # PublicSubnet3:
-  #   Default: 10.0.3.0/24
-  #   Description: "Give IP Range for public subnet 3"
-  #   Type: String
 
   paramPublicSubnet1:
     Description: "Give IP Range for public subnet 1"
@@ -53,7 +37,7 @@ Resources:
           - Key: Name
             Value: !Join [ "_", [ "VPC", !Ref AWS::StackName ] ]
 
-# b) Create a Internet Gateway
+
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -62,14 +46,14 @@ Resources:
         Value: !Join [ "_", [ "InternetGateway", !Ref AWS::StackName ] ]
         
         
-# c) Attach the Internet Gateway to the VPC
+
   VPCGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:      
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
       
-# a) Create a public route table for the VPC (will be public once it is associated with the Internet Gateway)
+
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -78,7 +62,7 @@ Resources:
         - Key: Name
           Value: !Join [ "_", [ "PublicRouteTable", !Ref AWS::StackName ] ]
           
-  # b) Associate the public route table with the Internet Gateway
+
   PublicRoute:
     Type: AWS::EC2::Route
     DependsOn: VPCGatewayAttachment
@@ -89,7 +73,7 @@ Resources:
       
       
 
-# c) Create a public subnet in AZ 1 (will be public once it is associated with public route table)
+
   Subnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -100,7 +84,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Join [ "_", [ "Subnet1", !Ref AWS::StackName ] ]
-  # Create a public subnet in AZ 2 (will be public once it is associated with public route table)
+
   Subnet2:
     Type: AWS::EC2::Subnet
     Properties:
@@ -111,7 +95,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Join [ "_", [ "Subnet2", !Ref AWS::StackName ] ]
-# Create a public subnet in AZ 3 (will be public once it is associated with public route table)
+
   Subnet3:
     Type: AWS::EC2::Subnet
     Properties:
@@ -123,20 +107,20 @@ Resources:
         - Key: Name
           Value: !Join [ "_", [ "Subnet3", !Ref AWS::StackName ] ]      
  
-  # d) Associate the public route table with the public subnet1
+  
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref Subnet1
-  # Associate the public route table with the public subnet2
+
   PublicSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref Subnet2 
       
-   # Associate the public route table with the public subnet3
+
   PublicSubnet3RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -192,19 +176,4 @@ Resources:
       Tags:
             - Key: Name
               Value: !Join [ "_", [ "EC2", !Ref AWS::StackName ] ]
-
-      
-      
-
-Outputs:
-  outputVPC:
-    Description: "A reference to the created VPC"
-    Value: !Ref VPC 
-  outputPublicSubnets:
-    Description: "A list of the public subnets"
-    Value: !Join [ ",", [ !Ref Subnet1, !Ref Subnet2, !Ref Subnet3]]
-    
-    
-    
-    
-   
+ 
