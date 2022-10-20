@@ -1,0 +1,210 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "This templatewill create an EC2 instance"
+
+Parameters:
+  vpcCidr:
+    Description: "Give IP Range"
+    Type: String
+    Default: 10.0.0.0/16
+
+  amiId:
+    Description: "Id of custom ami"
+    Type: String
+
+    
+  # PublicSubnet1:
+  #   Description: "Give IP Range for public subnet 1"
+  #   Type: String
+  #   Default: 10.0.0.0/24
+    
+  # PublicSubnet2:
+  #   Default: 10.0.2.0/24
+  #   Description: "Give IP Range for public subnet 2"
+  #   Type: String
+    
+  # PublicSubnet3:
+  #   Default: 10.0.3.0/24
+  #   Description: "Give IP Range for public subnet 3"
+  #   Type: String
+
+  paramPublicSubnet1:
+    Description: "Give IP Range for public subnet 1"
+    Type: String
+    Default: 10.0.1.0/24
+  paramPublicSubnet2:
+    Description: "Give IP Range for public subnet 2"
+    Type: String
+    Default: 10.0.2.0/24
+    
+  paramPublicSubnet3:
+    Description: "Give IP Range for public subnet 3"
+    Type: String
+    Default: 10.0.3.0/24
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+        CidrBlock: !Ref vpcCidr
+        EnableDnsHostnames: true
+        EnableDnsSupport: true
+        Tags:
+          - Key: Name
+            Value: !Join [ "_", [ "VPC", !Ref AWS::StackName ] ]
+
+# b) Create a Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Join [ "_", [ "InternetGateway", !Ref AWS::StackName ] ]
+        
+        
+# c) Attach the Internet Gateway to the VPC
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:      
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+      
+# a) Create a public route table for the VPC (will be public once it is associated with the Internet Gateway)
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Join [ "_", [ "PublicRouteTable", !Ref AWS::StackName ] ]
+          
+  # b) Associate the public route table with the Internet Gateway
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+      
+
+# c) Create a public subnet in AZ 1 (will be public once it is associated with public route table)
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ] # AZ 1
+      CidrBlock: !Ref paramPublicSubnet1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join [ "_", [ "Subnet1", !Ref AWS::StackName ] ]
+  # Create a public subnet in AZ 2 (will be public once it is associated with public route table)
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ] # AZ 2
+      CidrBlock: !Ref paramPublicSubnet2
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join [ "_", [ "Subnet2", !Ref AWS::StackName ] ]
+# Create a public subnet in AZ 3 (will be public once it is associated with public route table)
+  Subnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 2, !GetAZs  '' ] # AZ 3
+      CidrBlock: !Ref paramPublicSubnet3
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join [ "_", [ "Subnet3", !Ref AWS::StackName ] ]      
+ 
+  # d) Associate the public route table with the public subnet1
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref Subnet1
+  # Associate the public route table with the public subnet2
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref Subnet2 
+      
+   # Associate the public route table with the public subnet3
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref Subnet3
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: "Security Group for EC2"
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+            - Key: Name
+              Value: !Join [ "_", [ "SecurityGroup", !Ref AWS::StackName ] ]
+      VpcId: !Ref VPC
+  
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId:  !Ref amiId
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+      - !Ref SecurityGroup
+      BlockDeviceMappings:
+      -
+        DeviceName: /dev/sda1 
+        Ebs:
+            DeleteOnTermination: true
+            VolumeSize: 50
+            VolumeType: gp2
+      SubnetId: !Ref Subnet1
+      Tags:
+            - Key: Name
+              Value: !Join [ "_", [ "EC2", !Ref AWS::StackName ] ]
+
+      
+      
+
+Outputs:
+  outputVPC:
+    Description: "A reference to the created VPC"
+    Value: !Ref VPC 
+  outputPublicSubnets:
+    Description: "A list of the public subnets"
+    Value: !Join [ ",", [ !Ref Subnet1, !Ref Subnet2, !Ref Subnet3]]
+    
+    
+    
+    
+   
