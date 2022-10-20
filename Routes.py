@@ -1,4 +1,3 @@
-
 import requests
 import base64
 from flask import abort, request
