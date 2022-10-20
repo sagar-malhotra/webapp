@@ -1,4 +1,4 @@
-import requests
+# import requests
 import base64
 from flask import abort, request
 from App import app
@@ -34,7 +34,6 @@ def pwd(password):
 	return bcrypt.hashpw(pd,s)
 
 @app.route("/healthz")
-
 def myname():
     return jsonify({"Application is running  healthy": "200"})
 
@@ -122,9 +121,7 @@ def user(Id):
 
 		
 		if Id:
-			
-
-			
+					
 			csr = mysql.cursor()
 			query="Select u_email email, u_password pd from tbl_create_user where u_id=%s"
 			field=(Id,)
@@ -191,10 +188,6 @@ def user(Id):
 		
 		return result
 
-@app.route("/healthz")
-
-def myname():
-    return jsonify({"Application is healthy": "200"})
 
 @app.route('/update', methods=['PUT'])
 def update_user():
@@ -296,13 +289,9 @@ def update_user():
 	finally:
 		csr.close() 
 		#dbcon.close()
-		
-
-
-
-
+	
 
 if __name__ == "__main__":
 	
-    app.run()
+    app.run(host='0.0.0.0',port=5000)
 	
