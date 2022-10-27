@@ -1,7 +1,7 @@
 variable "subnet_id" {
   type    = string
   default = "subnet-08a246e70f57439e3"
-
+}
 variable "aws_region" {
   type    = string
   default = "us-east-1"
