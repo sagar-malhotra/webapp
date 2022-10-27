@@ -5,7 +5,8 @@ Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
-ExecStart=python3 /home/ubuntu/Routes.py
+ExecStart=sudo python3 /home/ubuntu/Routes.py
+WorkingDirectory=/home/ubuntu
 StandardInput=tty-force
 
 [Install]

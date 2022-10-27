@@ -62,6 +62,8 @@ build {
       "sudo apt-get install python3-flask -y",
       "sudo apt-get install python3-pymysql -y",
       "sudo apt-get install python3-sqlalchemy -y",
+      "sudo apt install python3-dotenv -y",
+      "sudo apt install python3-boto3 -y",
       "tar -xvf app.tar.gz",
       "sudo mv app.service /lib/systemd/system/",
       "sudo systemctl daemon-reload",

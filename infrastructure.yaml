@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: "This template will create an EC2 instance"
+Description: "This template will create an EC2 instance and other infrastrucure elements"
 
 Parameters:
   vpcCidr:
@@ -204,12 +204,11 @@ Resources:
           !Sub |
             #!/bin/bash
             yum update -y
-            sudo echo "export DB_Name=\"csye6225\"" >> ~/.bashrc
-            sudo echo "export DB_User=\"csye6225\"" >> ~/.bashrc
-            sudo echo "export DB_Pass=\"sagar2212db\"" >> ~/.bashrc
-            sudo echo "export S3_Name=${S3Bucket}" >> ~/.bashrc
-            sudo echo "export DB_host=${DatabaseMysql.Endpoint.Address}" >> ~/.bashrc
-#sudo echo "DB_CONNECTION=${Rds.Endpoint.Address}" >> /etc/profile 
+            sudo echo "DB_Name=\"csye6225\"" >> /home/ubuntu/.env
+            sudo echo "DB_User=\"csye6225\"" >> /home/ubuntu/.env
+            sudo echo "DB_Pass=\"sagar2212db\"" >> /home/ubuntu/.env
+            sudo echo "S3_Name=${S3Bucket}" >> /home/ubuntu/.env
+            sudo echo "DB_host=${DatabaseMysql.Endpoint.Address}" >> /home/ubuntu/.env
       IamInstanceProfile: !Ref Ec2InstanceProfile
 # Private route table ---------------
   myPrivateRouteTable:
@@ -221,12 +220,12 @@ Resources:
           Value: !Join [ "_", [ "PrivateRouteTable", !Ref AWS::StackName ] ]
 
 
-  # d) Associate the private route table with the Nat Gateway in AZ 1
+#d) Associate the private route table with the Nat Gateway in AZ 1
   # myPrivateRoute:
   #   Type: AWS::EC2::Route
   #   Properties:
   #     RouteTableId: !Ref myPrivateRouteTable
-  #     DestinationCidrBlock: 10.0.0.0/16
+  #     DestinationCidrBlock: ${EC2Instance.PublicIp}
   #     GatewayId: !Ref InternetGateway 
 ### check gateway or interna gateway for private route
   myPrivateSubnet1:
@@ -281,17 +280,22 @@ Resources:
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties: 
-      GroupDescription: "Security Group for EC2"
-      SecurityGroupIngress: 
+      GroupDescription: "Security Group for Database"
+      SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 3306
           ToPort: 3306
-          #CidrIp: ${EC2Instance.PrivateIp}
           SourceSecurityGroupId: !Ref SecurityGroup
       Tags:
-            - Key: Name
-              Value: !Join [ "_", [ "DatabaseSecurityGroup", !Ref AWS::StackName ] ]
+        - Key: Name
+          Value: !Join [ "_", [ "DatabaseSecurityGroup", !Ref AWS::StackName ] ]
       VpcId: !Ref VPC
+        # - IpProtocol: tcp
+        #   FromPort: 3306
+        #   ToPort: 3306
+        #   CidrIp: 10.0.1.0/24
+        #   #SourceSecurityGroupId: !Ref SecurityGroup
+
 
 # check s3 non empty delete=================================
   S3Bucket:
@@ -327,17 +331,20 @@ Resources:
   DatabaseMysql:
     Type: AWS::RDS::DBInstance
     Properties:
-      DBName: !Join [ "_", [ "csye6225", !Ref AWS::StackName ] ]
+      DBName: 'csye6225'
       AllocatedStorage: !Ref DBAllocatedStorage
       DBInstanceClass: db.t3.micro
       DBInstanceIdentifier: !Join [ "", [ "csye6225", !Ref AWS::StackName ] ]
       MultiAZ: False
       Engine: MySQL
+      VPCSecurityGroups: 
+        - !Ref DatabaseSecurityGroup
       MasterUsername: 'csye6225'
       MasterUserPassword: 'sagar2212db'
       DBParameterGroupName: !Ref RDSDBParameterGroup
       DBSubnetGroupName: !Ref DbSubnetGroup
       PubliclyAccessible: False
+      
   DbSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties: 
@@ -346,6 +353,7 @@ Resources:
       SubnetIds: 
         - !Ref myPrivateSubnet1
         - !Ref myPrivateSubnet2
+        - !Ref myPrivateSubnet3
       
 
 
@@ -358,18 +366,16 @@ Resources:
           - Effect: "Allow"
             Action:
               - "s3:PutObject"
-              - "s3:PutObjectAcl"
-              - "s3:GetObject"
               - "s3:GetObjectAcl"
+              - "s3:GetObject"
+              - "s3:DeleteObjectVersion"
+              - "s3:ListBucket"
               - "s3:DeleteObject"
               - "s3:GetBucketLocation"
+              - "s3:PutObjectAcl"
             Resource: 
-              - "arn:aws:s3:::prodS3bucketassignment5/*"
-          - Effect: "Allow"
-            Action:
-              - "s3:GetBucket"
-            Resource: 
-              - "arn:aws:s3:::!Ref S3Bucket"
+              - !Join [ "", [ "arn:aws:s3:::", !Ref S3Bucket,"/*" ] ]
+              - !Join [ "", [ "arn:aws:s3:::", !Ref S3Bucket ] ]
   
   EC2CSYE6225:
     Type: AWS::IAM::Role
