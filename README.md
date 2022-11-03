@@ -1,4 +1,4 @@
-Assignment 5 WebApp and Infrastructure
+Assignment 6 WebApp and Infrastructure
 This is a simple python based API that takes user details from user in Json format and stores it in the MySql database when called.
 
 The API Allows to Add User, Updated User Details and View User Details.
@@ -9,7 +9,7 @@ The application dependency and infrastructure setup is automatically don with th
 
 The application starts running as soon as the instance is launched. To launch the ec2 instanc and create infra conponenst run following command with your cloud formation template.
 
-aws cloudformation create-stack --stack-name Stack Name --template-body file://infrastructure.yaml --parameters ParameterKey=amiId,ParameterValue= ami id --region us-east-1 --profile demo --capabilities CAABILITY_NAMED_IAM
+aws cloudformation create-stack --stack-name assignment6 --template-body file://infrastructure.yaml --parameters ParameterKey=amiId,ParameterValue=ami-03bfd684634fdd769 ParameterKey=HostedZoneName,ParameterValue=prod.sagarmalhotra.me. --region us-east-1 --profile demo --capabilities CAPABILITY_NAMED_IAM
 
 API END POINTS
 
