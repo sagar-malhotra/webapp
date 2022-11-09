@@ -8,6 +8,10 @@ Type=simple
 ExecStart=sudo python3 /home/ubuntu/Routes.py
 WorkingDirectory=/home/ubuntu
 StandardInput=tty-force
+Restart=always
+RestartSec=1s
+
+
 
 [Install]
 WantedBy=multi-user.target
