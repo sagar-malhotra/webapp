@@ -64,11 +64,17 @@ build {
       "sudo apt-get install python3-sqlalchemy -y",
       "sudo apt install python3-dotenv -y",
       "sudo apt install python3-boto3 -y",
+      "sudo apt-get update -y",
+      "sudo apt-get install -y python3-statsd",
+      "sudo curl -o /home/ubuntu/amazon-cloudwatch-agent.deb https://s3.amazonaws.com/amazoncloudwatch-agent/debian/amd64/latest/amazon-cloudwatch-agent.deb",
+      "sudo dpkg -i -E /home/ubuntu/amazon-cloudwatch-agent.deb",
       "tar -xvf app.tar.gz",
       "sudo mv app.service /lib/systemd/system/",
       "sudo systemctl daemon-reload",
       "sudo systemctl enable app.service",
       "sudo systemctl start app.service",
+      "sudo su",
+      "sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/home/ubuntu/Cloudwatch_config.json",
     ]
   }
 

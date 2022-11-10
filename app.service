@@ -2,6 +2,8 @@
 Description=Dummy Service
 After=multi-user.target
 Conflicts=getty@tty1.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -10,8 +12,6 @@ WorkingDirectory=/home/ubuntu
 StandardInput=tty-force
 Restart=always
 RestartSec=1s
-
-
 
 [Install]
 WantedBy=multi-user.target
