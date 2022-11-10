@@ -20,6 +20,9 @@ import logging
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+import logging
+import time
+import statsd
 
 dotenv_path = Path("/home/ubuntu/.env")
 load_dotenv(dotenv_path=dotenv_path)
@@ -30,14 +33,33 @@ s =b'$2b$12$5bLd8.tAyVOYX66Y2KLNROtA86OappyUFvMtpSYsMDGnH2z1HNnUO'
 
 s3=boto3.client('s3')
 
+lg= logging.getLogger()
+lg.setLevel(logging.INFO)
+fr= logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+f_handler = logging.FileHandler('webapp.log')
+f_handler.setLevel(logging.INFO)
+f_handler.setFormatter(fr)
+lg.addHandler(f_handler)
+stats_c = statsd.StatsClient('localhost',8125)
 @app.route("/healthz")
 def myname():
+    start=time.time()
+    
+    
+    stats_c.incr("HealthzCalled")
+    app.logger.info('Healthz API Called')
+    dur = (time.time() - start) *1000
+    stats_c.timing("Healthz_Task_Time",dur)
     return jsonify({"Application Is Healthy": "200"})
 
 
 @app.route('/v1/documents/<string:docId>', methods=['DELETE'])
 def delete_doc(docId):
     csr = None
+    start=time.time()
+    # stats_c.timing("Task_Time",time.time())
+    stats_c.incr("Document Delete Called")
+    
 
     try:
          auth_token=str(request.headers['Authorization'])[6:]
@@ -54,6 +76,7 @@ def delete_doc(docId):
             data=csr.fetchone()
             if data is None:
                 csr.close()
+                app.logger.error('Not Found')
                 result = jsonify({"Not found",404})
                 result.status_code = 404
 							
@@ -63,7 +86,8 @@ def delete_doc(docId):
             bucket_path=data[1]
             u_id_db=data[2]
             if(u_id!= u_id_db):
-                csr.close()			
+                csr.close()	
+                app.logger.errror('User unauthorized')		
                 result = jsonify({"User unauthorized":'401'})
                 result.status_code = 401
                 return result
@@ -78,8 +102,10 @@ def delete_doc(docId):
             csr.execute(query,field)
             
             mysql.commit()
-            
+            app.logger.info('Delete Document Successfull')
             result=jsonify({"No Content":"204"})
+            dur = (time.time() - start) *1000
+            stats_c.timing("Doc_Delete_Task_Time",dur)
             result.status_code=204
             
             csr.close()
@@ -87,6 +113,7 @@ def delete_doc(docId):
 
             return result
          else:
+            app.logger.error('Unauthorized user')
             resp=jsonify({'Unauthorized User':'401'})
             resp.status_code=401
             return resp
@@ -98,6 +125,7 @@ def delete_doc(docId):
         # print(e)
 
     if success:
+        app.logger.error('Bad request')
         resp=jsonify({"Bad Request":"400"})
         resp.status_code=400
         return resp
@@ -108,6 +136,10 @@ def delete_doc(docId):
 
 @app.route('/v1/documents', methods=['POST'])
 def upload_doc():
+    start= time.time()
+    # stats_c.timing("Task_Time",time.time())
+    stats_c.incr("Upload Documents Called")
+    
     if 'files[]' not in request.files:
         result=jsonify({"Enter Proper Key":"files[]"})
         result.status_code=400
@@ -160,16 +192,17 @@ def upload_doc():
                     csr.execute(query, field)
                             
                     data=csr.fetchone()
-                        
+                    app.logger.info('Upload document successfull')   
                     result = jsonify(data)
                             
                             # result = jsonify('User added successfully!',201)
                     result.status_code = 201
                     csr.close()
-                            
+                    dur = (time.time() - start) *1000
+                    stats_c.timing("Doc_Upload_Task_Time",dur)       
                     return result
                 else:
-                    
+                    app.logger.error('Incorrect file count')
                     resp=jsonify({'message':'Please select one file only'})
                     resp.status_code=400
                     csr= mysql.cursor()
@@ -179,6 +212,7 @@ def upload_doc():
 
         else:
             # csr.close()
+            app.logger.error('Authorization error')
             resp=jsonify({'message':'Authorization Error'})
             resp.status_code=400
             return resp
@@ -187,6 +221,7 @@ def upload_doc():
         success=True
 
     if success:
+        app.logger.error('Bad request')
         resp=jsonify({"Bad Request":"400"})
         resp.status_code=400
         return resp
@@ -195,6 +230,10 @@ def upload_doc():
 
 @app.route('/v1/documents/<string:DocId>',methods=['GET'])
 def get_doc(DocId):
+    start=time.time()
+    # stats_c.timing("Task_Time",time.time())
+    stats_c.incr("Get Document Called")
+    
     # print(DocId)
 	# if 'files[]' not in request.files:
 	# 	resp=jsonify({'message': 'No file is found'})
@@ -221,7 +260,7 @@ def get_doc(DocId):
             csr.execute(query, field)
             data=csr.fetchone()
             if(data is None):
-				
+                app.logger.error('Bad Request')
                 csr.close()
                 result=jsonify("Bad Request",400)
                 result.status_code=400
@@ -229,18 +268,21 @@ def get_doc(DocId):
                 return result
             u_id_db=data[1]
             if(u_id!= u_id_db):
-                csr.close()			
+                csr.close()	
+                app.logger.error('User unauthorized')		
                 result = jsonify({"User unauthorized":'401'})
                 result.status_code = 401
                 return result
             csr.close()	
-
+            app.logger.info('Get document successfull')
             result = jsonify(data)
             result.status_code = 201
-							
+            dur = (time.time() - start) *1000
+            stats_c.timing("Doc_Get_Task_Time",dur)  				
             return result
         else:
             # csr.close()
+            app.logger.error('Unauthorized User')
             resp=jsonify({'Unauthorized User':'401'})
             resp.status_code=401
             return resp
@@ -260,6 +302,7 @@ def get_doc(DocId):
         # print(e)
 
     if success:
+        app.logger.error('Bad Request')
         resp=jsonify({"Bad Request":"400"})
         resp.status_code=400
         return resp
@@ -271,6 +314,9 @@ def get_doc(DocId):
 
 @app.route('/v1/documents', methods=['GET'])
 def getall_doc():
+    start= time.time()
+    # stats_c.timing("Task_Time",time.time())
+    stats_c.incr("Get All Documents Called")
 	# if 'files[]' not in request.files:
 	# 	resp=jsonify({'message': 'No file is found'})
 	# 	resp.status_code=400
@@ -306,12 +352,15 @@ def getall_doc():
 
 
 
-
+            app.logger.info('Get all documents called')
             result = jsonify(list_doc)
             result.status_code = 201
-            # csr.close()				
+            # csr.close()	
+            dur = (time.time() - start) *1000
+            stats_c.timing("Doc_GetAll_Task_Time",dur)  			
             return result
         else:
+            app.logger.error('Unauthorized User')
             resp=jsonify({'Unauthorized User':'401'})
             resp.status_code=401
             return resp
@@ -331,6 +380,7 @@ def getall_doc():
         # print(e)
 
     if success:
+        app.logger.error('Bad Request')
         resp=jsonify({"Bad Request":"400"})
         resp.status_code=400
         return resp
@@ -345,8 +395,10 @@ def getall_doc():
 
 @app.route('/v1/account', methods=['POST'])
 def create_user():
-	
-	# dbcon =None
+	start=time.time()
+	# stats_c.timing("Task_Time",time.time())
+	stats_c.incr("Add User Called")
+    
 	csr =None
 	success= False
 	try:
@@ -396,10 +448,12 @@ def create_user():
 			data=csr.fetchone()
 		
 			result = jsonify(data)
-			
+			app.logger.info('Create User Successful')
 			# result = jsonify('User added successfully!',201)
 			result.status_code = 201
 			csr.close()
+			dur = (time.time() - start) *1000
+			stats_c.timing("Create_User_Task_Time",dur)  
 			return result
 		else:
 			# # dbcon = mysql.connect()
@@ -421,7 +475,8 @@ def create_user():
 	# 	# dbcon.close()
 
 	if success:
-		# print("duplicate error")
+		app.logger.error('Bad Request')
+        
 		result=jsonify(Error="BAD_REQUEST", Code = 400  )	
 		result.status=400
 		
@@ -432,6 +487,9 @@ def create_user():
 # @app.route('/userdetails',methods=['GET'])
 # def users():
 def authenticate_user(auth_token):
+
+	
+	  
     csr = None
     success=False
     # print("entered auth method")
@@ -497,7 +555,11 @@ def authenticate_user(auth_token):
 
 
 @app.route('/v1/account/<int:Id>',methods=['GET'])
-def user(Id):	
+def user(Id):
+	start =time.time()	
+	#stats_c.timing("Task_Time",time.time())
+	stats_c.incr("Get User Called")
+    
 	success=False
     
 	csr= None
@@ -518,8 +580,10 @@ def user(Id):
 			rec=csr.fetchone()
 			
 			if(rec is None):
+				app.logger.error('Bad Request')
 				
 				csr.close()
+                
 				result=jsonify("Bad Request",400)
 				result.status_code=400
 
@@ -554,6 +618,7 @@ def user(Id):
 					exist = csr.fetchone()
 					if exist is None:
 						csr.close()
+						app.logger.error('Forbidded')
 						raise logging.exception
 					# rows = csr.fetchone()
 					# for x in rows:
@@ -564,13 +629,16 @@ def user(Id):
 					# 	jsonify("Acc Created= ",x[4])
 					# 	jsonify("Acc Updated= ",x[5],"\n")
 						
-
+					app.logger.info('User Get Successful')
 					result = jsonify(exist)
 					result.status_code = 200
 					csr.close()
+					dur = (time.time() - start) *1000
+					stats_c.timing("Get_User_Task_Time",dur)  
 					return result
 
 				else:
+					app.logger.error('Unauthorized User')
 					result=jsonify("Unauthorized user",401)
 					result.status_code=401
 					return result
@@ -600,6 +668,9 @@ def user(Id):
 
 @app.route('/v1/account/<int:AccId>', methods=['PUT'])
 def update_user(AccId):
+	start = time.time()
+	# stats_c.timing("Task_Time",time.time())
+	stats_c.incr("Update User Called")
 	
 	#dbcon = None
 	csr = None
@@ -638,6 +709,7 @@ def update_user(AccId):
 			if(rec is None):
 				
 				csr.close()
+				app.logger.error('Userauthorized User')					
 				result=jsonify("Unauthorized User",401)
 				result.status_code=401
 
@@ -687,15 +759,19 @@ def update_user(AccId):
 					# 	print("csr is none")
 					# exist = csr.fetchone()
 					# if exist is not None:
-					csr.close()					
+					csr.close()	
+					app.logger.info('User Update Successful')									
 					result = jsonify('No Content!',204)
 					result.status_code = 204
+					dur = (time.time() - start) *1000
+					stats_c.timing("Update_User_Task_Time",dur)
 					return result
 
 				else:
 					#dbcon = mysql.connect()
 					csr = mysql.cursor()
 					csr.close()
+					app.logger.error('Unauthorized User')	
 					result=jsonify("Unauthorized User",401)
 					result.status_code = 401
 					return result
@@ -705,6 +781,7 @@ def update_user(AccId):
 		#dbcon = mysql.connect()
 		csr = mysql.cursor()
 		csr.close()
+		app.logger.error('Bad Request')	
 		result=jsonify(Error="Bad_Request", Code = 400  )	
 		
 		result.status_code=400

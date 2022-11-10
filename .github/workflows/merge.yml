@@ -29,7 +29,7 @@ jobs:
     - name: Run Unit Test
       run: python UnitTest.py 
     - name: Build python artifacts
-      run: tar -cf app.tar.gz *.py *.service
+      run: tar -cf app.tar.gz *.py *.service *.json
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
