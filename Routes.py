@@ -23,6 +23,10 @@ from pathlib import Path
 import logging
 import time
 import statsd
+import json
+import boto3
+
+
 
 dotenv_path = Path("/home/ubuntu/.env")
 load_dotenv(dotenv_path=dotenv_path)
@@ -402,7 +406,29 @@ def create_user():
 	csr =None
 	success= False
 	try:
-		
+		message = {"foo": "bar"}
+		client = boto3.client('sns')
+		response = client.publish(
+        TargetArn=arn,
+        Message=json.dumps(message)
+        )
+		dynamodb=boto3.resource('dynamodb')
+
+   
+
+		dynamodb.put_item(
+
+		TableName="mydynamodbtoken",
+
+		Item={
+
+        'Email_ID': email,
+
+        'Token_ID': token,
+
+        'TimeToLive':expiryTimestamp
+		},
+        )
 		js = request.json
 		email =js['email']
 		password =js['password']

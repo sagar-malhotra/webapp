@@ -1,4 +1,4 @@
-Assignment 7 WebApp and Infrastructure
+Assignment 8 WebApp and Infrastructure
 This is a simple python based API that takes user details from user in Json format and stores it in the MySql database when called.
 
 The API Allows to Add User, Updated User Details and View User Details.
