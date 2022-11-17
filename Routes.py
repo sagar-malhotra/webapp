@@ -1,77 +1,61 @@
-import requests
 from App import app
+from flask import Flask as flsk
+import logging
+import sys
+from logging import FileHandler,WARNING
+from Db import SqlAlchemy as mysql
+from flask import jsonify,request
+from flask import abort, request
+import uuid
+import boto3
 import base64
 import email
 import errno
-from http.client import BAD_REQUEST
-from multiprocessing.connection import wait
-from flask import abort, request
-import requests
-from Db import SqlAlchemy as mysql
-from flask import jsonify,request
 import pymysql
-import uuid
-import boto3
-from werkzeug.utils import secure_filename
-from werkzeug.utils import secure_filename
-from datetime import datetime
-import bcrypt
-import logging
-import os
+import json
+import statsd
+import time
 from dotenv import load_dotenv
 from pathlib import Path
+from http.client import BAD_REQUEST
+import requests
+from multiprocessing.connection import wait
+from datetime import datetime
+from werkzeug.utils import secure_filename
+import os
+import bcrypt
 import logging
-import time
-import statsd
-import json
-import boto3
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+file_handler = logging.FileHandler('webapplogs.log')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
-
-
-dotenv_path = Path("/home/ubuntu/.env")
-load_dotenv(dotenv_path=dotenv_path)
-
-bucket_name=os.environ['S3_Name']
-s =b'$2b$12$5bLd8.tAyVOYX66Y2KLNROtA86OappyUFvMtpSYsMDGnH2z1HNnUO'
 
 
 s3=boto3.client('s3')
+s =b'$2b$12$5bLd8.tAyVOYX66Y2KLNROtA86OappyUFvMtpSYsMDGnH2z1HNnUO'
+c = statsd.StatsClient('localhost',8125)
+dotenv_path = Path("/home/ubuntu/.env")
+load_dotenv(dotenv_path=dotenv_path)
+bucket_name=os.environ['S3_Name']
 
-lg= logging.getLogger()
-lg.setLevel(logging.INFO)
-fr= logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
-f_handler = logging.FileHandler('webapp.log')
-f_handler.setLevel(logging.INFO)
-f_handler.setFormatter(fr)
-lg.addHandler(f_handler)
-stats_c = statsd.StatsClient('localhost',8125)
-@app.route("/healthz")
-def myname():
-    start=time.time()
-    
-    
-    stats_c.incr("HealthzCalled")
-    app.logger.info('Healthz API Called')
-    dur = (time.time() - start) *1000
-    stats_c.timing("Healthz_Task_Time",dur)
-    return jsonify({"Application Is Healthy": "200"})
+# bucket_name="buckettest"
 
 
 @app.route('/v1/documents/<string:docId>', methods=['DELETE'])
-def delete_doc(docId):
+def document_delete(docId):
     csr = None
     start=time.time()
-    # stats_c.timing("Task_Time",time.time())
-    stats_c.incr("Document Delete Called")
-    
-
+    c.incr("Delete Document")
     try:
          auth_token=str(request.headers['Authorization'])[6:]
          check_auth=authenticate_user(auth_token)
-
-    
-         if check_auth != False:
-			
+                  
+         if check_auth != False:			
+            # bucket_name="testcsye"
             u_id=check_auth
             csr = mysql.cursor()
             query = "SELECT u_filename,s3_bucket_path,u_id from tbl_document_user where doc_id= %s"
@@ -80,152 +64,137 @@ def delete_doc(docId):
             data=csr.fetchone()
             if data is None:
                 csr.close()
-                app.logger.error('Not Found')
                 result = jsonify({"Not found",404})
-                result.status_code = 404
-							
+                result.status_code = 404			
                 return result
-
             file_name=data[0]
             bucket_path=data[1]
             u_id_db=data[2]
             if(u_id!= u_id_db):
-                csr.close()	
-                app.logger.errror('User unauthorized')		
+                csr.close()			
                 result = jsonify({"User unauthorized":'401'})
                 result.status_code = 401
                 return result
+           
             response=s3.delete_object(Bucket=bucket_name, Key=docId)
-            csr.close()
-            
-            csr=mysql.cursor()
-            
+
+            csr.close()   
+            csr=mysql.cursor()            
             query="Delete from tbl_document_user where doc_id=%s"
-            field=(docId,)
-            
-            csr.execute(query,field)
-            
-            mysql.commit()
-            app.logger.info('Delete Document Successfull')
+            field=(docId,)    
+            csr.execute(query,field)   
+            mysql.commit() 
             result=jsonify({"No Content":"204"})
-            dur = (time.time() - start) *1000
-            stats_c.timing("Doc_Delete_Task_Time",dur)
             result.status_code=204
-            
             csr.close()
-
-
+            app.logger.info("User deleted successfully")
+            duration = (time.time() - start) *1000
+            c.timing("deleteapi time",duration)
             return result
          else:
-            app.logger.error('Unauthorized user')
             resp=jsonify({'Unauthorized User':'401'})
             resp.status_code=401
-            return resp
-
-
-    
+            
+            app.logger.error("User not deleted")
+            return resp					
+ 
     except Exception as e:
         success=True
-        # print(e)
+        app.logger.error("User not deleted bad request")
 
     if success:
-        app.logger.error('Bad request')
         resp=jsonify({"Bad Request":"400"})
         resp.status_code=400
         return resp
+ 
 
-		
-	
+@app.route("/healthz")
+def healthy_app():
+    start=time.time()
+    c.incr("healthz")
+    app.logger.info("Healthy Application")
+    duration = (time.time() - start) *1000
+    c.timing("healthzapi time",duration)
+    return jsonify({"Application is healthy": "200"})
 
 
 @app.route('/v1/documents', methods=['POST'])
-def upload_doc():
-    start= time.time()
-    # stats_c.timing("Task_Time",time.time())
-    stats_c.incr("Upload Documents Called")
-    
+def upload_document():
+    start=time.time()
+    c.incr("Document Upload")
     if 'files[]' not in request.files:
-        result=jsonify({"Enter Proper Key":"files[]"})
-        result.status_code=400
-        return result
+     
+       resp=jsonify({'message': 'Please provide the validate key'})
+       resp.status_code=400
+       return resp
     files=request.files.getlist('files[]')
-    file_count=len(files)
+    
     csr = None
-    # errors={}
-    success=False
-    auth_token=str(request.headers['Authorization'])[6:]
-    check_auth=authenticate_user(auth_token)
+    db_error=False
 
+    auth_token=str(request.headers['Authorization'])[6:]
+    #Basic Auth
+    check_auth=authenticate_user(auth_token)
+    
+    file_count=len(files)
     try:
         if check_auth != False:
-			
-
             u_id=check_auth
-			
             for file in files:
-				
-			
                 if file and file_count==1:
 				
                     filename=secure_filename(file.filename)
-                    path_name=os.path.join("/home/ubuntu/",filename)
+                    pathname=os.path.join("/home/ubuntu/",filename)
                     file.save(os.path.join("",filename))
+                    # bucket_name will be passed by environment variables
                     object_name=str(uuid.uuid4())
-                    s3.upload_file(path_name,bucket_name,object_name)
-                    head_object=s3.head_object(Bucket=bucket_name,Key=object_name)
-
-                    created_date_s3=head_object.get('ResponseMetadata', {}).get('HTTPHeaders', {}).get('date')
+                    s3.upload_file(pathname,bucket_name,object_name)
                     s3_bucket_path="/"+bucket_name+"/"+object_name
-      
+                    head_object=s3.head_object(Bucket=bucket_name,Key=object_name)
+                    created_date_s3=head_object.get('ResponseMetadata', {}).get('HTTPHeaders', {}).get('date')
+                    
+                    # insert data into db
                     query = "INSERT INTO tbl_document_user(doc_id, u_id, u_filename,Date_created,s3_bucket_path) VALUES(%s,%s,%s,%s,%s)"
                     field = (object_name,u_id,filename,created_date_s3,s3_bucket_path)
-    
                     csr = mysql.cursor()
-
-                    csr.execute(query, field)
-                            
+                    csr.execute(query, field)       
                     mysql.commit()
-                            
-                        # rows = csr.fetchone()
-                    csr.close()	
-						
-                    csr = mysql.cursor()
-                            
-                    query = "SELECT doc_id, u_id, u_filename, Date_created, s3_bucket_path from tbl_document_user where doc_id= %s"
+                    csr.close()		
+                    csr = mysql.cursor()        
+                    query = "SELECT doc_id, u_id, u_filename,Date_created, s3_bucket_path from tbl_document_user where doc_id= %s"
                     field = (object_name,)
                     csr.execute(query, field)
                             
                     data=csr.fetchone()
-                    app.logger.info('Upload document successfull')   
-                    result = jsonify(data)
-                            
-                            # result = jsonify('User added successfully!',201)
-                    result.status_code = 201
+                        
+                    resp = jsonify(data)
+                    resp.status_code = 201
                     csr.close()
-                    dur = (time.time() - start) *1000
-                    stats_c.timing("Doc_Upload_Task_Time",dur)       
-                    return result
+                    app.logger.info("Document updated")
+                    duration = (time.time() - start) *1000
+                    c.timing("uploaddocumentapi time",duration)     
+                    return resp
                 else:
-                    app.logger.error('Incorrect file count')
-                    resp=jsonify({'message':'Please select one file only'})
+                    csr=mysql.cursor()
+                    resp=jsonify({'message':'More than 1 file can not be uploaded'})
                     resp.status_code=400
-                    csr= mysql.cursor()
                     csr.close()
+                    app.logger.error("More than 1 file can not be uploaded")
                     return resp
 
 
         else:
-            # csr.close()
-            app.logger.error('Authorization error')
+            app.logger.error("Authorization error") 
             resp=jsonify({'message':'Authorization Error'})
             resp.status_code=400
             return resp
 
     except Exception as e:
-        success=True
+	# print(e)
+        db_error=True
+        app.logger.error("file upload bad request") 
 
-    if success:
-        app.logger.error('Bad request')
+    if db_error:
         resp=jsonify({"Bad Request":"400"})
         resp.status_code=400
         return resp
@@ -233,231 +202,195 @@ def upload_doc():
 
 
 @app.route('/v1/documents/<string:DocId>',methods=['GET'])
-def get_doc(DocId):
+def get_document(DocId):
     start=time.time()
-    # stats_c.timing("Task_Time",time.time())
-    stats_c.incr("Get Document Called")
-    
-    # print(DocId)
-	# if 'files[]' not in request.files:
-	# 	resp=jsonify({'message': 'No file is found'})
-	# 	resp.status_code=400
-	# 	return resp
-    
-    # files=request.files.getlist('files[]')
-    # file_count=len(files)
+    c.incr("Delete Document")
     csr = None
-    # errors={}
-    success=False
     auth_token=str(request.headers['Authorization'])[6:]
     check_auth=authenticate_user(auth_token)
-    # print(check_auth)
+    db_error=False
     try:
         if check_auth != False:
-			
-
             u_id=check_auth
             csr = mysql.cursor()
-            #query = "SELECT doc_id, u_id, u_filename, Date_created, s3_bucket_path from tbl_document_user where doc_id= %s"
-            query = "SELECT doc_id, u_id, u_filename, Date_created, s3_bucket_path from tbl_document_user where doc_id= %s"
+            query = "SELECT doc_id, u_id, u_filename, Date_created, s3_bucket_path from tbl_document_user where doc_id= %s"  
             field = (DocId,)
             csr.execute(query, field)
             data=csr.fetchone()
-            if(data is None):
-                app.logger.error('Bad Request')
-                csr.close()
-                result=jsonify("Bad Request",400)
-                result.status_code=400
+            Db_id=data[1]
+            if(u_id!= Db_id):
+                csr.close()			
+                resp = jsonify({"User unauthorized":'401'})
+                resp.status_code = 401
+                return resp
 
-                return result
-            u_id_db=data[1]
-            if(u_id!= u_id_db):
-                csr.close()	
-                app.logger.error('User unauthorized')		
-                result = jsonify({"User unauthorized":'401'})
-                result.status_code = 401
-                return result
-            csr.close()	
-            app.logger.info('Get document successfull')
-            result = jsonify(data)
-            result.status_code = 201
-            dur = (time.time() - start) *1000
-            stats_c.timing("Doc_Get_Task_Time",dur)  				
-            return result
+            if(data is None):
+				
+                csr.close()
+                resp=jsonify("Bad Request",400)
+                resp.status_code=400
+
+                return resp
+
+            csr.close()			
+            resp = jsonify(data)
+            resp.status_code = 201
+            app.logger.info("Document fetched successfully") 
+            duration = (time.time() - start) *1000
+            c.timing("getdocumentapi time",duration)				
+            return resp
         else:
-            # csr.close()
-            app.logger.error('Unauthorized User')
+           
             resp=jsonify({'Unauthorized User':'401'})
             resp.status_code=401
-            return resp
-					# #dbcon = mysql.connect()
-					# csr = mysql.cursor()
-					# return not_found()
-						
-
-
-						
-					# success=True
-
-     
+            app.logger.error("Document not fetched") 
+            return resp  
 
     except Exception as e:
-        success=True
+        db_error=True
+        app.logger.error("Document not fetched bad request") 
         # print(e)
 
-    if success:
-        app.logger.error('Bad Request')
+    if db_error:
         resp=jsonify({"Bad Request":"400"})
         resp.status_code=400
         return resp
-    # else:
-    #     resp=jsonify({'message':'File type is exceeding the size or multiple files are not allowed'})
-    #     resp.status_code=400
-    #     return resp
-
+  
 
 @app.route('/v1/documents', methods=['GET'])
-def getall_doc():
-    start= time.time()
-    # stats_c.timing("Task_Time",time.time())
-    stats_c.incr("Get All Documents Called")
-	# if 'files[]' not in request.files:
-	# 	resp=jsonify({'message': 'No file is found'})
-	# 	resp.status_code=400
-	# 	return resp
-    
-    # files=request.files.getlist('files[]')
-    # file_count=len(files)
+def get_documents():
+    start=time.time()
+    c.incr("Get all documents")
     csr = None
-    # errors={}
-    success=False
+    db_error=False
     auth_token=str(request.headers['Authorization'])[6:]
     check_auth=authenticate_user(auth_token)
-    # print(check_auth)
     try:
         if check_auth != False:
-			
-
             u_id=check_auth
             csr = mysql.cursor()
-            query = "SELECT doc_id, u_id, u_filename , Date_created, s3_bucket_path from tbl_document_user where u_id= %s"
-            #query = "SELECT doc_id, u_id, u_filename, Date_created, s3_bucket_path from tbl_document_user where u_id= %s"
+            query = "SELECT doc_id, u_id, u_filename, Date_created, s3_bucket_path from tbl_document_user where u_id= %s"
             field = (u_id,)
             csr.execute(query, field)
             data=csr.fetchall()
             csr.close()
-            list_doc=[]
+            doc_list=[]
             for rows in data:
-                # print(rows[0])
-                list_doc.append(rows)
-            # print(list_doc)
-            # return jsonify({list_doc:'201'})
-            # return json.dumps({ [dict(ix) for ix in data]},code=201 )
-
-
-
-            app.logger.info('Get all documents called')
-            result = jsonify(list_doc)
+                
+                doc_list.append(rows)
+            result = jsonify(doc_list)
             result.status_code = 201
-            # csr.close()	
-            dur = (time.time() - start) *1000
-            stats_c.timing("Doc_GetAll_Task_Time",dur)  			
+            app.logger.info("Documents fetched successfully") 	
+            duration = (time.time() - start) *1000
+            c.timing("getalldocumentsapi time",duration)			
             return result
         else:
-            app.logger.error('Unauthorized User')
             resp=jsonify({'Unauthorized User':'401'})
             resp.status_code=401
+            app.logger.error("Documents not fetched") 
             return resp
-					# #dbcon = mysql.connect()
-					# csr = mysql.cursor()
-					# return not_found()
-						
-
-
-						
-					# success=True
-
-     
 
     except Exception as e:
-        success=True
+        db_error=True
+        app.logger.error("Documents not fetched bad request") 
         # print(e)
 
-    if success:
-        app.logger.error('Bad Request')
+    if db_error:
         resp=jsonify({"Bad Request":"400"})
         resp.status_code=400
         return resp
-    # else:
-    #     resp=jsonify({'message':'File type is exceeding the size or multiple files are not allowed'})
-    #     resp.status_code=400
-    #     return resp
 
+@app.route('/v1/verifyUserEmail/<string:EmailId1>',methods=['GET'])
+def insertvalueindynamodb(EmailId1):
+    EmailId=EmailId1+"'"
+    csr =None
+    db_error=False
+    app.logger.info("Test")
+    try:
+        app.logger.info(EmailId)
+        x = EmailId.split("=")
+        app.logger.info(x)
+        token=x[2]
+        app.logger.info(token)
+        y=x[1].split("&")
+        emailid=y[0]
+        app.logger.info(emailid)
+        app.logger.info("test10")
+        dynamodb=boto3.resource('dynamodb',region_name='us-east-1')
+        app.logger.info("test11")
+        table=dynamodb.Table('UserDetails')
+        app.logger.info("test12")
+        response=table.get_item(
+                Key={
+                   "Email":emailid,
+                   "Token":token
+                }
+        )
+        app.logger.info(response)
+        if response['Item']:
+            app.logger.info("test14")
+            query = "update tbl_create_user set verified_user =%s where u_email=%s"
+            field = ("YES",emailid)
+            csr = mysql.cursor()
+
+            csr.execute(query, field)
+            app.logger.info("test15")
+            mysql.commit()
+            csr.close()	
+            result=jsonify(Message="User Verified", Code = 200  )
+            result.status=200
+            return result
+            
+    except Exception as e:
+        db_error=True
+        app.logger.error("User details not verified") 	
+        app.logger.error(e.__traceback__.tb_lineno) 
+        app.logger.error(e)		
+			
+		
+    if db_error:
+		
+        result=jsonify(Error="BAD_REQUEST", Code = 400  )	
+        result.status=400
+        return result
 
 
 
 
 @app.route('/v1/account', methods=['POST'])
-def create_user():
+def userDetails():
 	start=time.time()
-	# stats_c.timing("Task_Time",time.time())
-	stats_c.incr("Add User Called")
     
+	c.incr("post user details")
 	csr =None
-	success= False
+	db_error=False
 	try:
-		message = {"foo": "bar"}
-		client = boto3.client('sns')
-		response = client.publish(
-        TargetArn=arn,
-        Message=json.dumps(message)
-        )
-		dynamodb=boto3.resource('dynamodb')
-
-   
-
-		dynamodb.put_item(
-
-		TableName="mydynamodbtoken",
-
-		Item={
-
-        'Email_ID': email,
-
-        'Token_ID': token,
-
-        'TimeToLive':expiryTimestamp
-		},
-        )
+	
 		js = request.json
 		email =js['email']
 		password =js['password']
 		fname =js['fname']
 		lname=js['lname']
 		
-		# datetime object containing current date and time
+		
 		now = datetime.now()
-
-		# dd/mm/YY H:M:S
+		
 		u_crdate = now.strftime("%d/%m/%Y %H:%M:%S")
 		
-		
-		# validate the received values
 		if fname and lname and email and password and request.method == 'POST':
 			# bcrypt password
 			bytes = password.encode('utf-8')
-			# salt = bcrypt.gensalt()
+			app.logger.info(password)	
+			app.logger.info("test1")
+			Get_Token=tokenauthenticate(email,password)
+			app.logger.info("test8")
 			hash_pwd = bcrypt.hashpw(bytes, s)
-			
-			# insert data into db
-			query = "INSERT INTO tbl_create_user(u_email, u_password, u_fname, u_lname,acc_created) VALUES(%s,%s,%s,%s,%s)"
-			field = (email,hash_pwd,fname,lname,u_crdate)
-			
-			# # connect with mysql
-			# dbcon = mysql.connect()
+			app.logger.info("test9")
+			u_verified="NO"
+			query = "INSERT INTO tbl_create_user(u_email, u_password, u_fname, u_lname,acc_created,verified_user) VALUES(%s,%s,%s,%s,%s,%s)"
+			field = (email,hash_pwd,fname,lname,u_crdate,u_verified)
 			csr = mysql.cursor()
-			
-			# # execute the query
+			app.logger.info("test8")
 			csr.execute(query, field)
 			
 			mysql.commit()
@@ -467,152 +400,139 @@ def create_user():
 			
 			csr = mysql.cursor()
 			
-			query = "SELECT u_id ,u_email ,u_fname ,u_lname from tbl_create_user where u_email= %s"
+			client = boto3.client('sns',region_name='us-east-1')
+			response = client.publish (
+            TargetArn = "arn:aws:sns:us-east-1:868454036435:CSYETopic_assignment8",
+            Message = json.dumps(
+                {'email':email,
+                 'token':Get_Token,
+                 'Message_Type':"user verification"
+                })
+                 )
+
+			query = "SELECT u_id,u_email,u_fname,u_lname,verified_user from tbl_create_user where u_email= %s"
 			field = (email,)
 			csr.execute(query, field)
 			
 			data=csr.fetchone()
 		
 			result = jsonify(data)
-			app.logger.info('Create User Successful')
-			# result = jsonify('User added successfully!',201)
+			
+			app.logger.info("User details added successfully") 
 			result.status_code = 201
+			duration = (time.time() - start) *1000
+			c.timing("postuserdetailsapi time",duration)           
 			csr.close()
-			dur = (time.time() - start) *1000
-			stats_c.timing("Create_User_Task_Time",dur)  
 			return result
 		else:
-			# # dbcon = mysql.connect()
-			# csr = mysql.cursor()
-			# return not_found()
-			success=True
-	# except mysql.connector.Error:
-	# 	print("error duplicacy")
+			db_error=True
+			app.logger.error("User details not added")          
+            
+	
 	except Exception as e:
-		# print(e)
-		success=True		
-		# dbcon = mysql.connect()
-		# csr = dbcon.cursor()
-
-	# finally:
-	# 	# dbcon = mysql.connect()
-	# 	csr = mysql.cursor()
-	# 	csr.close() 
-	# 	# dbcon.close()
-
-	if success:
-		app.logger.error('Bad Request')
-        
+		# print(e) 
+		db_error=True
+		app.logger.error(e.__traceback__.tb_lineno) 
+		app.logger.error(e)		
+		
+	if db_error:
+		
 		result=jsonify(Error="BAD_REQUEST", Code = 400  )	
 		result.status=400
-		
-		# return jsonify((400, 'Record Not Found')) 
-		# result.status_code="400 BAD_REQUEST"
 		return result
 		
-# @app.route('/userdetails',methods=['GET'])
-# def users():
-def authenticate_user(auth_token):
 
-	
-	  
+def authenticate_user(auth_token):
     csr = None
-    success=False
-    # print("entered auth method")
-    # print(auth_token)
+    db_error=False
+
     try:
         csr = mysql.cursor()
-        # auth_token=str(request.headers['Authorization'])[6:]
-        # print("1")		
+       	
         auth_token1=base64.b64decode(auth_token)
 				
         auth_split=str(auth_token1).split(':')
         auth_uname=str(auth_split[0])[2:]
-        # print(auth_uname)
+        
         auth_pwd=str(auth_split[1])
 				
         hash_pwd=pwd(auth_pwd[:-1])
-        # print(hash_pwd)	
-       
-  
-        query="Select u_password pwd,u_id from tbl_create_user where u_email=%s"
+        query="Select u_password pwd,u_id, verified_user from tbl_create_user where u_email=%s"
         field=(auth_uname,)
         csr.execute(query,field)
         rec=csr.fetchone()
-		
-        
         db_pwd=rec[0]
         db_uid=rec[1]
-        # print(db_pwd)
-        # print(db_uid)
-        # except Exception:
-        #     result=jsonify("Unauthorized user", Code = 401  )	
-        #     result.status_code=401
-        #     return False
-
-        if(rec is None):
-				
+        db_verified=rec[2]
+        if(rec is None):				
             csr.close()
-            # result=jsonify("Unauthorized user",401)
-            # result.status_code=401
             return False
         else:
             csr.close()
 				
-            if((str(hash_pwd)[2:].replace('\'','')==db_pwd) ):
+            if((str(hash_pwd)[2:].replace('\'','')==db_pwd) and db_verified=="YES"):
                 return db_uid
             else:
-                # csr.close()
-                # result=jsonify("Unauthorized user",401)
-                # result.status_code=401
+
                 return False
 					
     except Exception as e :
-        success=True
-        # print(e)
-    # finally:
-		
-    #     csr.close() 
-	# 	#dbcon.close()
-    if success:
-        # result=jsonify("Unauthorized user", 401)	
-        # result.status_code=401
+        db_error=True
+
+    if db_error:
         return False
 
 
+def tokenauthenticate(email,password):
+
+       
+    combination=email+":"+password
+    app.logger.info(combination)	
+    app.logger.info("test2")
+    token= str(combination.encode('utf-8'))
+    app.logger.info("test3")
+    expiryTimestamp = int(time.time() + 2*60)	
+    app.logger.info("test4")		
+    
+    dynamodb=boto3.resource('dynamodb',region_name='us-east-1')
+    app.logger.info("test5")
+    table = dynamodb.Table('UserDetails')
+    table.put_item(
+    Item={
+        'Email': email,
+        'Token': token,
+        'TTL':expiryTimestamp,
+    }
+)   
+    app.logger.info("test6")
+    return token
+
 @app.route('/v1/account/<int:Id>',methods=['GET'])
-def user(Id):
-	start =time.time()	
-	#stats_c.timing("Task_Time",time.time())
-	stats_c.incr("Get User Called")
-    
-	success=False
-    
-	csr= None
-    
+def user(Id):	
+	start=time.time()
+	c.incr("Get user details")
+	db_error = False
+	csr = None
 	try:
-		# js = request.json
-		# Id =js['id']
 		
 		if Id:
 			
 			#dbcon = mysql.connect()
 			
 			csr = mysql.cursor()
-			query="Select u_email email, u_password pd from tbl_create_user where u_id=%s"
+			query="Select u_email email, u_password,verified_user pd from tbl_create_user where u_id=%s"
 			field=(Id,)
 			csr.execute(query,field)
 			
 			rec=csr.fetchone()
 			
 			if(rec is None):
-				app.logger.error('Bad Request')
 				
 				csr.close()
-                
 				result=jsonify("Bad Request",400)
 				result.status_code=400
-
+				app.logger.error("User details does not exist")               
+                
 				return result
 			else:
 				csr.close()
@@ -633,72 +553,50 @@ def user(Id):
 
 				db_pwd=rec[1]
 				db_uname=rec[0]
+				db_verified=rec[2]
 				
-				if((str(hash_pwd)[2:].replace('\'','')==db_pwd) and (auth_uname==db_uname) ):
+				if((str(hash_pwd)[2:].replace('\'','')==db_pwd) and ((auth_uname==db_uname)and db_verified=="YES") ):
 					
 					csr = mysql.cursor()
-					query="SELECT u_id, u_email, u_fname, u_lname, acc_created, acc_updated from tbl_create_user where u_id=%s"
+					query="SELECT u_id,u_email,u_fname,u_lname,acc_created,acc_updated from tbl_create_user where u_id=%s"
 					field=(Id,)
 					csr.execute(query,field)
-					# field = (email)
 					exist = csr.fetchone()
 					if exist is None:
 						csr.close()
-						app.logger.error('Forbidded')
 						raise logging.exception
-					# rows = csr.fetchone()
-					# for x in rows:
-					# 	jsonify("id= ",x[0])
-					# 	jsonify("Email= ",x[1])
-					# 	jsonify("First Name= ",x[2])
-					# 	jsonify("Last Name= ",x[3])
-					# 	jsonify("Acc Created= ",x[4])
-					# 	jsonify("Acc Updated= ",x[5],"\n")
-						
-					app.logger.info('User Get Successful')
 					result = jsonify(exist)
 					result.status_code = 200
 					csr.close()
-					dur = (time.time() - start) *1000
-					stats_c.timing("Get_User_Task_Time",dur)  
+					app.logger.info("User details fetched successfully")
+					duration = (time.time() - start) *1000
+					c.timing("getuserdetailsapi time",duration)
 					return result
 
 				else:
-					app.logger.error('Unauthorized User')
 					result=jsonify("Unauthorized user",401)
 					result.status_code=401
+					app.logger.error("User details not fetched unauthorized user")
 					return result
 	except Exception as e:
-		success=True
-		# result=jsonify(Error="Bad_Request-No details found", Code = 400  )	
-		# result.status=400
-		# result.status_code=400
-		# print(e)
-	# finally:
+		db_error=True
 		
-	# 	csr.close() 
-	# 	#dbcon.close()
-	if success:
+		app.logger.error("User unauthorized")
+
+	if db_error:
 		# print("duplicate error")
 		result=jsonify(Error="Forbidden", Code = 403 )	
 		result.status_code=403
 		
-		# return jsonify((400, 'Record Not Found')) 
-		# result.status_code="400 BAD_REQUEST"
 		return result
 
 
 
-
-
-
 @app.route('/v1/account/<int:AccId>', methods=['PUT'])
-def update_user(AccId):
-	start = time.time()
-	# stats_c.timing("Task_Time",time.time())
-	stats_c.incr("Update User Called")
+def update_userDetails(AccId):
 	
-	#dbcon = None
+	start=time.time()
+	c.incr("update user details")
 	csr = None
 	
 	try:
@@ -709,13 +607,7 @@ def update_user(AccId):
 		fname =js['fname']
 		lname=js['lname']
 
-		# if(email==" " or password==" " or fname==" " or lname==" "):
-			
-		# 	result=jsonify("No Content",204)
-		# 	result.status_code=401
-		# 	return result
-		
-		# datetime object containing current date and time
+
 		now = datetime.now()
 
 		# dd/mm/YY H:M:S
@@ -726,7 +618,7 @@ def update_user(AccId):
 			
 			#dbcon=mysql.connect()
 			csr=mysql.cursor()
-			query="Select u_email em, u_password pd from tbl_create_user where u_id=%s"
+			query="Select u_email em, u_password pd, verified_user from tbl_create_user where u_id=%s"
 			field=(AccId,)
 			csr.execute(query,field)
 
@@ -735,7 +627,6 @@ def update_user(AccId):
 			if(rec is None):
 				
 				csr.close()
-				app.logger.error('Userauthorized User')					
 				result=jsonify("Unauthorized User",401)
 				result.status_code=401
 
@@ -754,12 +645,12 @@ def update_user(AccId):
 				auth_pwd=str(auth_split[1])
 				
 				hash_pwd=pwd(auth_pwd[:-1])
-				# print(rec)
-				# print(type(rec))
+
 				db_pwd=rec[1]
 				db_uname=rec[0]
+				db_verified=rec[2]
 				
-				if((str(hash_pwd)[2:].replace('\'','')==db_pwd) and (auth_uname==db_uname) ):
+				if((str(hash_pwd)[2:].replace('\'','')==db_pwd) and ((auth_uname==db_uname) and db_verified=="YES")):
 					# print("matched")
 					csr = mysql.cursor()
 					# bcrypt password
@@ -771,8 +662,6 @@ def update_user(AccId):
 					data = (fname, lname, hashed_pwd,u_update,email)
 					#dbcon = mysql.connect()
 					csr = mysql.cursor()
-			
-  				
 					csr.execute(sql, data)
 					mysql.commit()
 					# print(csr.rowcount)
@@ -780,48 +669,42 @@ def update_user(AccId):
 						result=jsonify("Forbidden email can't be changed",403)
 						result.status_code=403
 						csr.close()
+						app.logger.error("User email can't be changed")
 						return result
 						# raise logging.exception
-					# 	print("csr is none")
-					# exist = csr.fetchone()
-					# if exist is not None:
-					csr.close()	
-					app.logger.info('User Update Successful')									
+
+					csr.close()					
 					result = jsonify('No Content!',204)
-					result.status_code = 204
-					dur = (time.time() - start) *1000
-					stats_c.timing("Update_User_Task_Time",dur)
+					result.status_code = 204 
+					app.logger.info("User details updated successfully")
+					duration = (time.time() - start) *1000
+					c.timing("updateuserdetailsapi time",duration)                    
 					return result
 
 				else:
 					#dbcon = mysql.connect()
 					csr = mysql.cursor()
 					csr.close()
-					app.logger.error('Unauthorized User')	
 					result=jsonify("Unauthorized User",401)
 					result.status_code = 401
+					app.logger.info("User details can't update unauthorized user")
 					return result
 			
 	except Exception as e:
 		# print(e)
-		#dbcon = mysql.connect()
+		app.logger.info("User update bad request")
 		csr = mysql.cursor()
 		csr.close()
-		app.logger.error('Bad Request')	
 		result=jsonify(Error="Bad_Request", Code = 400  )	
 		
 		result.status_code=400
 		return result
-		# # resp = jsonify("User can't be updated!")
-		# # resp.status_code = 404
-		# # return result
-		# # print(e)
-	# finally:
-	# 	csr.close() 
-	# 	#dbcon.close()
-		
 
-		
+def pwd(password):
+	pd=password.encode('utf-8')
+	return bcrypt.hashpw(pd,s)
+
+
 
 @app.errorhandler(404)
 def not_found(error=None):
@@ -834,12 +717,8 @@ def not_found(error=None):
 
     return resp
 
-def pwd(password):
-	pd=password.encode('utf-8')
-	return bcrypt.hashpw(pd,s)
-
 
 if __name__ == "__main__":
-
+	
     app.run(host='0.0.0.0',port=80)
 
