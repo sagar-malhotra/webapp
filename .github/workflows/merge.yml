@@ -1,5 +1,5 @@
 
-name: Workflow on merged request
+name: Workflow on merged requests
 
 on:
   pull_request:
