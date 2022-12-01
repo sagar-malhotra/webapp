@@ -35,7 +35,6 @@ logger.addHandler(file_handler)
 
 
 
-
 s3=boto3.client('s3')
 s =b'$2b$12$5bLd8.tAyVOYX66Y2KLNROtA86OappyUFvMtpSYsMDGnH2z1HNnUO'
 c = statsd.StatsClient('localhost',8125)
@@ -118,6 +117,14 @@ def healthy_app():
     c.timing("healthzapi time",duration)
     return jsonify({"Application is healthy": "200"})
 
+@app.route("/app")
+def health_app():
+    start=time.time()
+    c.incr("app")
+    app.logger.info("Health Application")
+    duration = (time.time() - start) *1000
+    c.timing("App time",duration)
+    return jsonify({"Application is healthy": "200"})
 
 @app.route('/v1/documents', methods=['POST'])
 def upload_document():
@@ -161,7 +168,7 @@ def upload_document():
                     csr.execute(query, field)       
                     mysql.commit()
                     csr.close()		
-                    csr = mysql.cursor()        
+                    csr = mysql.cursor(dictionary=True)        
                     query = "SELECT doc_id, u_id, u_filename,Date_created, s3_bucket_path from tbl_document_user where doc_id= %s"
                     field = (object_name,)
                     csr.execute(query, field)
@@ -213,12 +220,12 @@ def get_document(DocId):
     try:
         if check_auth != False:
             u_id=check_auth
-            csr = mysql.cursor()
+            csr = mysql.cursor(dictionary=True)
             query = "SELECT doc_id, u_id, u_filename, Date_created, s3_bucket_path from tbl_document_user where doc_id= %s"  
             field = (DocId,)
             csr.execute(query, field)
             data=csr.fetchone()
-            Db_id=data[1]
+            Db_id=data["u_id"]
             if(u_id!= Db_id):
                 csr.close()			
                 resp = jsonify({"User unauthorized":'401'})
@@ -351,7 +358,7 @@ def insertvalueindynamodb(EmailId1):
 		
     if db_error:
 		
-        result=jsonify(Error="BAD_REQUEST", Code = 400  )	
+        result=jsonify(Error="User Not Verfied", Code = 400  )	
         result.status=400
         return result
 
@@ -399,7 +406,7 @@ def userDetails():
 			# rows = csr.fetchone()
 			csr.close()	
 			
-			csr = mysql.cursor()
+			csr = mysql.cursor(dictionary=True)
 			
 			client = boto3.client('sns',region_name='us-east-1')
 			response = client.publish (
@@ -521,7 +528,7 @@ def user(Id):
 			#dbcon = mysql.connect()
 			
 			csr = mysql.cursor()
-			query="Select u_email email, u_password,verified_user pd from tbl_create_user where u_id=%s"
+			query="Select u_email, u_password,verified_user from tbl_create_user where u_id=%s"
 			field=(Id,)
 			csr.execute(query,field)
 			
@@ -558,7 +565,7 @@ def user(Id):
 				
 				if((str(hash_pwd)[2:].replace('\'','')==db_pwd) and ((auth_uname==db_uname)and db_verified=="YES") ):
 					
-					csr = mysql.cursor()
+					csr = mysql.cursor(dictionary=True)
 					query="SELECT u_id,u_email,u_fname,u_lname,acc_created,acc_updated from tbl_create_user where u_id=%s"
 					field=(Id,)
 					csr.execute(query,field)
@@ -721,5 +728,5 @@ def not_found(error=None):
 
 if __name__ == "__main__":
 	
-    app.run(host='0.0.0.0',port=80)
+    app.run(host='0.0.0.0',port=5000)
 
