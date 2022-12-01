@@ -35,6 +35,7 @@ logger.addHandler(file_handler)
 
 
 
+
 s3=boto3.client('s3')
 s =b'$2b$12$5bLd8.tAyVOYX66Y2KLNROtA86OappyUFvMtpSYsMDGnH2z1HNnUO'
 c = statsd.StatsClient('localhost',8125)
