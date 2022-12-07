@@ -365,7 +365,7 @@ def insertvalueindynamodb(EmailId1):
 
 
 
-@app.route('/v1/account', methods=['POST'])
+@app.route('/v2/account', methods=['POST'])
 def userDetails():
 	start=time.time()
     
